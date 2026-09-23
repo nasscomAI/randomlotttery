@@ -9,7 +9,7 @@ Uses the official NASSCOM wordmark and favicon from `nasscom.in`, presented as t
 - Drag-and-drop CSV, XLSX, and XLS upload with clear validation
 - Participant review before the draw
 - Animated, cryptographically random selection
-- Original 8-bit chiptune draw music, coin-style winner fanfare, and a persistent music toggle
+- Chiptune arrangements of public-domain classics: Grieg’s “In the Hall of the Mountain King” accelerates through the draw, and the “Also sprach Zarathustra” fanfare greets the winner, with a persistent music toggle
 - Celebratory winner reveal and redraw option
 - Responsive design for desktop and mobile
 - Private by design: CSV contents never leave the browser

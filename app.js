@@ -1,5 +1,5 @@
-const state = { entries: [], file: null, drawing: false };
-const sound = { enabled: readMusicPreference(), context: null, bus: null, master: null, noise: null, timer: null, beat: 0 };
+const state = { entries: [], file: null, drawing: false, drawStart: 0 };
+const sound = { enabled: readMusicPreference(), context: null, bus: null, master: null, noise: null, scheduled: [], timer: null, beat: 0 };
 
 function readMusicPreference() {
   try { return localStorage.getItem('luckyDrawMusic') !== 'off'; } catch { return true; }
@@ -43,6 +43,7 @@ function playTone(frequency, delay = 0, duration = .25, volume = .25, type = 'si
   oscillator.connect(gain).connect(sound.bus);
   oscillator.start(start);
   oscillator.stop(start + duration + .03);
+  sound.scheduled.push({ node: oscillator, gain });
 }
 
 function playKick(delay = 0) {
@@ -59,6 +60,7 @@ function playKick(delay = 0) {
   oscillator.connect(gain).connect(sound.bus);
   oscillator.start(start);
   oscillator.stop(start + .2);
+  sound.scheduled.push({ node: oscillator, gain });
 }
 
 function playNoise(delay = 0, duration = .05, volume = .12) {
@@ -82,59 +84,95 @@ function playNoise(delay = 0, duration = .05, volume = .12) {
   source.connect(filter).connect(gain).connect(sound.bus);
   source.start(start);
   source.stop(start + duration + .02);
+  sound.scheduled.push({ node: source, gain });
 }
 
-// Original 8-bit style loop in C major: 32 sixteenth-note steps (two bars), square lead,
-// pulse bass, noise hats. 0 = rest. Written for this app; not a transcription of anything.
-const BEAT_MS = 105;
-const N = { G3: 196, A3: 220, B3: 246.94, C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392, A4: 440, B4: 493.88,
-  C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880, B5: 987.77, C6: 1046.5, E6: 1318.5, G6: 1567.98,
-  C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G2: 98, A2: 110 };
-const LOOP = {
-  lead: [N.E5, N.G5, N.C6, 0, N.G5, 0, N.E5, 0, N.D5, N.E5, N.F5, 0, N.E5, 0, N.D5, 0,
-         N.C5, N.E5, N.G5, 0, N.A5, 0, N.G5, 0, N.F5, N.E5, N.D5, N.E5, N.C5, 0, 0, 0],
-  bass: [N.C3, 0, N.C3, 0, N.G2, 0, N.G2, 0, N.F3, 0, N.F3, 0, N.G3, 0, N.G3, 0,
-         N.A2, 0, N.A2, 0, N.E3, 0, N.E3, 0, N.F3, 0, N.F3, 0, N.G3, 0, N.G3, 0]
-};
+// Note frequencies (Hz).
+const N = { C2: 65.41, G2: 98, B2: 123.47, C3: 130.81, E3: 164.81, F3: 174.61, FS3: 185, G3: 196, B3: 246.94, C4: 261.63,
+  CS4: 277.18, D4: 293.66, DS4: 311.13, E4: 329.63, F4: 349.23, FS4: 369.99, G4: 392, GS4: 415.3, A4: 440, B4: 493.88,
+  C5: 523.25, CS5: 554.37, D5: 587.33, DS5: 622.25, E5: 659.25, FS5: 739.99, G5: 783.99, C6: 1046.5, E6: 1318.5 };
 
-function startDrawMusic() {
+// Draw music: "In the Hall of the Mountain King" (Grieg, 1875, public domain), chiptune arrangement.
+// 64 eighth-note steps that accelerate from 170ms to 80ms, so the whole theme lasts exactly DRAW_MS.
+// Each entry is [frequency, length in steps]. The draw animation is driven by the same timeline.
+const MOUNTAIN_KING = [
+  [N.B3, 1], [N.CS4, 1], [N.D4, 1], [N.E4, 1], [N.FS4, 1], [N.D4, 1], [N.FS4, 2],
+  [N.F4, 1], [N.CS4, 1], [N.F4, 2], [N.E4, 1], [N.C4, 1], [N.E4, 2],
+  [N.B3, 1], [N.CS4, 1], [N.D4, 1], [N.E4, 1], [N.FS4, 1], [N.D4, 1], [N.FS4, 1], [N.B4, 1],
+  [N.A4, 1], [N.FS4, 1], [N.D4, 1], [N.FS4, 1], [N.A4, 4],
+  [N.FS4, 1], [N.GS4, 1], [N.A4, 1], [N.B4, 1], [N.CS5, 1], [N.A4, 1], [N.CS5, 2],
+  [N.C5, 1], [N.GS4, 1], [N.C5, 2], [N.B4, 1], [N.G4, 1], [N.B4, 2],
+  [N.FS4, 1], [N.GS4, 1], [N.A4, 1], [N.B4, 1], [N.CS5, 1], [N.A4, 1], [N.CS5, 1], [N.FS5, 1],
+  [N.E5, 1], [N.CS5, 1], [N.A4, 1], [N.CS5, 1], [N.E5, 4]
+];
+const STEP_COUNT = MOUNTAIN_KING.reduce((sum, [, length]) => sum + length, 0); // 64
+const STEP_MS = Array.from({ length: STEP_COUNT }, (_, i) => 170 - 90 * (i / (STEP_COUNT - 1)));
+const STEP_START = STEP_MS.reduce((starts, ms, i) => { starts.push(i ? starts[i - 1] + STEP_MS[i - 1] : 0); return starts; }, []);
+const DRAW_MS = STEP_START[STEP_COUNT - 1] + STEP_MS[STEP_COUNT - 1]; // 8000
+
+function stepAt(elapsedMs) {
+  let step = 0;
+  while (step < STEP_COUNT - 1 && STEP_START[step + 1] <= elapsedMs) step++;
+  return step;
+}
+
+// Schedules the whole theme up front on the audio clock, skipping anything before offsetMs
+// so the music can be switched on part-way through a draw and stay in sync with the animation.
+function startDrawMusic(offsetMs = 0) {
   stopDrawMusic();
   if (!sound.enabled || !getAudioContext()) return;
-  sound.beat = 0;
-  const tick = () => {
-    const step = sound.beat % LOOP.lead.length;
-    if (LOOP.lead[step]) playTone(LOOP.lead[step], 0, .17, .16, 'square');
-    if (LOOP.bass[step]) playTone(LOOP.bass[step], 0, .2, .2, 'triangle');
-    if (step % 4 === 0) playKick();
-    if (step % 2 === 1) playNoise(0, .04, step % 4 === 3 ? .1 : .05);
-    sound.beat++;
-  };
-  tick();
-  sound.timer = window.setInterval(tick, BEAT_MS);
+  let step = 0;
+  MOUNTAIN_KING.forEach(([note, length]) => {
+    const startMs = STEP_START[step] - offsetMs;
+    const lengthMs = STEP_MS.slice(step, step + length).reduce((sum, ms) => sum + ms, 0);
+    const progress = step / STEP_COUNT;
+    if (startMs >= 0) {
+      const delay = startMs / 1000;
+      const seconds = lengthMs / 1000;
+      playTone(note, delay, seconds * .9, .16, 'square');
+      playTone(note / 4, delay, seconds * .8, .22, 'triangle');
+      if (progress > .5) playTone(note / 2, delay, seconds * .6, .08, 'sawtooth');
+      if (step % 2 === 0) playKick(delay);
+      if (progress > .5 && length === 1) playNoise(delay + seconds / 2, .04, .06);
+    }
+    step += length;
+  });
 }
 
 function stopDrawMusic() {
   if (sound.timer) window.clearInterval(sound.timer);
   sound.timer = null;
+  const now = sound.context ? sound.context.currentTime : 0;
+  sound.scheduled.forEach(({ node, gain }) => {
+    try { gain.gain.cancelScheduledValues(now); gain.gain.setValueAtTime(.0001, now); node.stop(now + .01); } catch {}
+  });
+  sound.scheduled = [];
+}
+
+// Winner music: the opening fanfare of "Also sprach Zarathustra" (R. Strauss, 1896, public domain).
+function playWinnerFanfare() {
+  if (!sound.enabled) return;
+  const brass = (note, delay, seconds, volume) => {
+    playTone(note, delay, seconds, volume, 'square');
+    playTone(note, delay, seconds, volume * .8, 'triangle');
+    playTone(note / 2, delay, seconds, volume * .5, 'triangle');
+  };
+  brass(N.C4, 0, .75, .16);
+  brass(N.G4, .7, .75, .17);
+  brass(N.C5, 1.4, .95, .18);
+  brass(N.E5, 2.3, .28, .18);
+  brass(N.DS5, 2.58, 1.5, .2);
+  playTone(N.C3, 2.58, 1.5, .25, 'triangle');
+  playTone(N.G3, 2.58, 1.5, .12, 'triangle');
+  playTone(N.C2, 0, 2.5, .2, 'triangle');
+  for (let i = 0; i < 12; i++) playKick(2.58 + i * .11);
+  playKick(3.9);
 }
 
 function playCoin(delay = 0) {
   playTone(N.G5, delay, .08, .18, 'square');
   playTone(N.C6, delay + .07, .08, .18, 'square');
   playTone(N.E6, delay + .14, .45, .18, 'square');
-}
-
-function playWinnerFanfare() {
-  if (!sound.enabled) return;
-  playCoin(0);
-  // Short victory riff after the coin: a rising run that lands on a held C major chord.
-  const run = [N.C5, N.E5, N.G5, N.C6, N.E6];
-  run.forEach((note, index) => playTone(note, .55 + index * .09, .12, .16, 'square'));
-  const hold = 1.05;
-  [N.C5, N.E5, N.G5, N.C6].forEach((note, voice) => playTone(note, hold, 1.1, voice === 3 ? .18 : .12, voice % 2 ? 'square' : 'triangle'));
-  playTone(N.C3, hold, 1.1, .3, 'triangle');
-  [0, .55, hold].forEach((d) => playKick(d));
-  [.6, .78, .96].forEach((d) => playNoise(d, .04, .07));
 }
 
 function updateSoundButton() {
@@ -260,6 +298,7 @@ function randomIndex(max) {
 function runDraw() {
   if (state.drawing) return;
   state.drawing = true;
+  state.drawStart = performance.now();
   startDrawMusic();
   setView('draw');
   $('#drawStage').style.display = 'block';
@@ -267,18 +306,17 @@ function runDraw() {
   $('#progressBar').style.width = '0%';
   $('#drawStatus').textContent = 'Mixing things up...';
   const winner = state.entries[randomIndex(state.entries.length)];
-  const duration = 4200;
-  const start = performance.now();
-  let nextSwitch = 0;
+  let lastStep = -1;
 
   function animate(now) {
-    const elapsed = now - start;
-    const progress = Math.min(elapsed / duration, 1);
-    if (now >= nextSwitch) {
+    const elapsed = now - state.drawStart;
+    const progress = Math.min(elapsed / DRAW_MS, 1);
+    const step = stepAt(elapsed);
+    if (step !== lastStep) {
+      lastStep = step;
       const candidate = state.entries[randomIndex(state.entries.length)];
       $('#candidateName').textContent = candidate.name;
       $('#candidateNumber').textContent = candidate.number;
-      nextSwitch = now + 70 + progress * 260;
     }
     $('#progressBar').style.width = `${Math.round(progress * 100)}%`;
     if (progress > .72) $('#drawStatus').textContent = 'Almost there...';
@@ -293,7 +331,6 @@ function revealWinner(winner) {
   $('#candidateName').textContent = winner.name;
   $('#candidateNumber').textContent = winner.number;
   setTimeout(() => {
-    stopDrawMusic();
     $('#drawStage').style.display = 'none';
     $('#winnerName').textContent = winner.name;
     $('#winnerDetail').textContent = winner.detail;
@@ -302,7 +339,7 @@ function revealWinner(winner) {
     playWinnerFanfare();
     $('#winnerStage').classList.add('show');
     state.drawing = false;
-  }, 450);
+  }, 350);
 }
 
 function createConfetti() {
@@ -342,7 +379,7 @@ $('#soundToggle').addEventListener('click', () => {
   sound.enabled = !sound.enabled;
   try { localStorage.setItem('luckyDrawMusic', sound.enabled ? 'on' : 'off'); } catch {}
   if (!sound.enabled) stopDrawMusic();
-  else if (state.drawing) startDrawMusic();
+  else if (state.drawing) startDrawMusic(performance.now() - state.drawStart);
   else playCoin(0);
   updateSoundButton();
 });
