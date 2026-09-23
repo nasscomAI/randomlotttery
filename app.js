@@ -1,5 +1,5 @@
 const state = { entries: [], file: null, drawing: false };
-const sound = { enabled: true, context: null, timer: null, beat: 0 };
+const sound = { enabled: localStorage.getItem('luckyDrawMusic') !== 'off', context: null, timer: null, beat: 0 };
 
 const $ = (selector) => document.querySelector(selector);
 const panels = { upload: $('#uploadPanel'), review: $('#reviewPanel'), draw: $('#drawPanel') };
@@ -63,9 +63,9 @@ function updateSoundButton() {
   const button = $('#soundToggle');
   button.classList.toggle('muted', !sound.enabled);
   button.setAttribute('aria-pressed', String(sound.enabled));
-  button.setAttribute('aria-label', sound.enabled ? 'Mute draw music' : 'Turn on draw music');
+  button.setAttribute('aria-label', sound.enabled ? 'Turn off draw music' : 'Turn on draw music');
   button.querySelector('.sound-icon').textContent = sound.enabled ? '♪' : '×';
-  button.querySelector('b').textContent = sound.enabled ? 'Sound on' : 'Sound off';
+  button.querySelector('b').textContent = sound.enabled ? 'Music on' : 'Music off';
 }
 
 function setView(view) {
@@ -261,8 +261,10 @@ $('#drawAgainBtn').addEventListener('click', runDraw);
 $('#newDrawBtn').addEventListener('click', () => { state.entries = []; state.file = null; $('#fileInput').value = ''; setView('upload'); });
 $('#soundToggle').addEventListener('click', () => {
   sound.enabled = !sound.enabled;
+  localStorage.setItem('luckyDrawMusic', sound.enabled ? 'on' : 'off');
   if (!sound.enabled) stopDrawMusic();
   else if (state.drawing) startDrawMusic();
   else playTone(523.25, 0, .12, .025, 'sine');
   updateSoundButton();
 });
+updateSoundButton();
