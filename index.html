@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1020" />
+    <title>Lucky Draw</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Lucky Draw home">
+          <span class="brand-mark">✦</span>
+          <span>Lucky Draw</span>
+        </a>
+        <div class="fairness"><span></span> Fair &amp; random selection</div>
+      </header>
+
+      <section class="hero">
+        <div class="eyebrow">A little suspense. One lucky winner.</div>
+        <h1>Turn a list into<br /><em>a moment.</em></h1>
+        <p>Upload your participants, start the draw, and let chance choose the winner.</p>
+      </section>
+
+      <section class="draw-card" id="drawCard">
+        <div class="steps" aria-label="Draw progress">
+          <div class="step active" data-step="1"><span>1</span><b>Upload</b></div>
+          <div class="step-line"></div>
+          <div class="step" data-step="2"><span>2</span><b>Review</b></div>
+          <div class="step-line"></div>
+          <div class="step" data-step="3"><span>3</span><b>Draw</b></div>
+        </div>
+
+        <div class="panel active" id="uploadPanel">
+          <div class="panel-heading">
+            <div>
+              <span class="panel-kicker">STEP 01</span>
+              <h2>Bring in your crowd</h2>
+              <p>Upload a CSV with a name and number column.</p>
+            </div>
+            <button class="sample-link" id="sampleBtn" type="button">↓ Sample CSV</button>
+          </div>
+
+          <label class="drop-zone" id="dropZone" for="fileInput">
+            <input id="fileInput" type="file" accept=".csv,text/csv" hidden />
+            <span class="upload-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+            </span>
+            <strong>Drop your CSV here</strong>
+            <span>or <u>browse your computer</u></span>
+            <small>CSV only · Maximum 5 MB</small>
+          </label>
+          <div class="error-message" id="errorMessage" role="alert"></div>
+        </div>
+
+        <div class="panel" id="reviewPanel">
+          <div class="panel-heading compact">
+            <div>
+              <span class="panel-kicker">STEP 02</span>
+              <h2>Your draw is ready</h2>
+              <p id="reviewSummary">Review the entries before starting.</p>
+            </div>
+            <button class="secondary-btn" id="changeFileBtn" type="button">Change file</button>
+          </div>
+
+          <div class="file-chip">
+            <span class="file-icon">CSV</span>
+            <div><strong id="fileName"></strong><small id="fileMeta"></small></div>
+            <span class="success-check">✓</span>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Participant</th><th>Number</th></tr></thead>
+              <tbody id="entriesBody"></tbody>
+            </table>
+          </div>
+          <button class="primary-btn" id="startBtn" type="button"><span>Start the draw</span><b>→</b></button>
+        </div>
+
+        <div class="panel" id="drawPanel">
+          <div class="draw-stage" id="drawStage">
+            <div class="draw-status" id="drawStatus">Mixing things up...</div>
+            <div class="number-orbit">
+              <div class="orbit-ring"></div>
+              <div class="candidate" id="candidateNumber">00</div>
+            </div>
+            <div class="candidate-name" id="candidateName">Get ready</div>
+            <div class="progress-track"><span id="progressBar"></span></div>
+            <p class="draw-caption" id="drawCaption">Every participant has an equal chance.</p>
+          </div>
+
+          <div class="winner-stage" id="winnerStage" aria-live="polite">
+            <div class="confetti" id="confetti"></div>
+            <div class="trophy">✦</div>
+            <span class="winner-label">AND THE WINNER IS</span>
+            <h2 id="winnerName"></h2>
+            <div class="winner-number">Lucky number <strong id="winnerNumber"></strong></div>
+            <p>Congratulations! Today, chance chose you.</p>
+            <div class="winner-actions">
+              <button class="primary-btn" id="drawAgainBtn" type="button">Draw again <b>↻</b></button>
+              <button class="secondary-btn" id="newDrawBtn" type="button">New list</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer><span>✦</span> No data leaves your browser. Your list stays private.</footer>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
