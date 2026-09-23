@@ -23,8 +23,8 @@ Five test files are available in the [`samples`](samples) folder, including quot
 
 1. Create a public GitHub repository and push these files to its `main` branch.
 2. Open **Settings → Pages** in the repository.
-3. Under **Build and deployment**, set **Source** to **GitHub Actions**.
-4. The included workflow will deploy the site after each push to `main`.
+3. Under **Build and deployment**, choose **Deploy from a branch**.
+4. Select the `main` branch and `/ (root)` folder, then save. New pushes to `main` deploy automatically.
 
 The live URL will appear in the deployment summary and normally follows:
 `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/`
