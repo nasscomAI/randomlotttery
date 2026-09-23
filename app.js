@@ -1,19 +1,33 @@
-const state = { entries: [], file: null, drawing: false };
-const sound = { enabled: localStorage.getItem('luckyDrawMusic') !== 'off', context: null, timer: null, beat: 0 };
+const state = { entries: [], file: null, drawing: false, drawStart: 0 };
+const sound = { enabled: readMusicPreference(), context: null, bus: null, master: null, noise: null, scheduled: [], timer: null, beat: 0 };
+
+function readMusicPreference() {
+  try { return localStorage.getItem('luckyDrawMusic') !== 'off'; } catch { return true; }
+}
 
 const $ = (selector) => document.querySelector(selector);
 const panels = { upload: $('#uploadPanel'), review: $('#reviewPanel'), draw: $('#drawPanel') };
 
+const MASTER_VOLUME = .6;
+
 function getAudioContext() {
   if (!sound.context) {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (AudioContext) sound.context = new AudioContext();
+    if (!AudioContext) return null;
+    sound.context = new AudioContext();
+    // One master chain: a limiter so stacked notes never clip, then a single volume control.
+    const limiter = sound.context.createDynamicsCompressor();
+    limiter.threshold.value = -12; limiter.ratio.value = 6; limiter.attack.value = .003; limiter.release.value = .12;
+    sound.master = sound.context.createGain();
+    sound.master.gain.value = MASTER_VOLUME;
+    limiter.connect(sound.master).connect(sound.context.destination);
+    sound.bus = limiter;
   }
-  if (sound.context?.state === 'suspended') sound.context.resume();
+  if (sound.context.state === 'suspended') sound.context.resume();
   return sound.context;
 }
 
-function playTone(frequency, delay = 0, duration = .13, volume = .035, type = 'sine') {
+function playTone(frequency, delay = 0, duration = .25, volume = .25, type = 'sine') {
   if (!sound.enabled) return;
   const context = getAudioContext();
   if (!context) return;
@@ -23,40 +37,142 @@ function playTone(frequency, delay = 0, duration = .13, volume = .035, type = 's
   oscillator.type = type;
   oscillator.frequency.setValueAtTime(frequency, start);
   gain.gain.setValueAtTime(.0001, start);
-  gain.gain.exponentialRampToValueAtTime(volume, start + .018);
+  gain.gain.exponentialRampToValueAtTime(volume, start + .015);
+  gain.gain.setValueAtTime(volume, start + Math.max(.015, duration * .35));
   gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
-  oscillator.connect(gain).connect(context.destination);
+  oscillator.connect(gain).connect(sound.bus);
   oscillator.start(start);
-  oscillator.stop(start + duration + .02);
+  oscillator.stop(start + duration + .03);
+  sound.scheduled.push({ node: oscillator, gain });
 }
 
-function startDrawMusic() {
+function playKick(delay = 0) {
+  if (!sound.enabled) return;
+  const context = getAudioContext();
+  if (!context) return;
+  const start = context.currentTime + delay;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.frequency.setValueAtTime(150, start);
+  oscillator.frequency.exponentialRampToValueAtTime(45, start + .12);
+  gain.gain.setValueAtTime(.7, start);
+  gain.gain.exponentialRampToValueAtTime(.001, start + .18);
+  oscillator.connect(gain).connect(sound.bus);
+  oscillator.start(start);
+  oscillator.stop(start + .2);
+  sound.scheduled.push({ node: oscillator, gain });
+}
+
+function playNoise(delay = 0, duration = .05, volume = .12) {
+  if (!sound.enabled) return;
+  const context = getAudioContext();
+  if (!context) return;
+  if (!sound.noise) {
+    const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    sound.noise = buffer;
+  }
+  const start = context.currentTime + delay;
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const gain = context.createGain();
+  source.buffer = sound.noise;
+  filter.type = 'highpass'; filter.frequency.value = 6000;
+  gain.gain.setValueAtTime(volume, start);
+  gain.gain.exponentialRampToValueAtTime(.001, start + duration);
+  source.connect(filter).connect(gain).connect(sound.bus);
+  source.start(start);
+  source.stop(start + duration + .02);
+  sound.scheduled.push({ node: source, gain });
+}
+
+// Note frequencies (Hz).
+const N = { C2: 65.41, G2: 98, B2: 123.47, C3: 130.81, E3: 164.81, F3: 174.61, FS3: 185, G3: 196, B3: 246.94, C4: 261.63,
+  CS4: 277.18, D4: 293.66, DS4: 311.13, E4: 329.63, F4: 349.23, FS4: 369.99, G4: 392, GS4: 415.3, A4: 440, B4: 493.88,
+  C5: 523.25, CS5: 554.37, D5: 587.33, DS5: 622.25, E5: 659.25, FS5: 739.99, G5: 783.99, C6: 1046.5, E6: 1318.5 };
+
+// Draw music: "In the Hall of the Mountain King" (Grieg, 1875, public domain), chiptune arrangement.
+// 64 eighth-note steps that accelerate from 170ms to 80ms, so the whole theme lasts exactly DRAW_MS.
+// Each entry is [frequency, length in steps]. The draw animation is driven by the same timeline.
+const MOUNTAIN_KING = [
+  [N.B3, 1], [N.CS4, 1], [N.D4, 1], [N.E4, 1], [N.FS4, 1], [N.D4, 1], [N.FS4, 2],
+  [N.F4, 1], [N.CS4, 1], [N.F4, 2], [N.E4, 1], [N.C4, 1], [N.E4, 2],
+  [N.B3, 1], [N.CS4, 1], [N.D4, 1], [N.E4, 1], [N.FS4, 1], [N.D4, 1], [N.FS4, 1], [N.B4, 1],
+  [N.A4, 1], [N.FS4, 1], [N.D4, 1], [N.FS4, 1], [N.A4, 4],
+  [N.FS4, 1], [N.GS4, 1], [N.A4, 1], [N.B4, 1], [N.CS5, 1], [N.A4, 1], [N.CS5, 2],
+  [N.C5, 1], [N.GS4, 1], [N.C5, 2], [N.B4, 1], [N.G4, 1], [N.B4, 2],
+  [N.FS4, 1], [N.GS4, 1], [N.A4, 1], [N.B4, 1], [N.CS5, 1], [N.A4, 1], [N.CS5, 1], [N.FS5, 1],
+  [N.E5, 1], [N.CS5, 1], [N.A4, 1], [N.CS5, 1], [N.E5, 4]
+];
+const STEP_COUNT = MOUNTAIN_KING.reduce((sum, [, length]) => sum + length, 0); // 64
+const STEP_MS = Array.from({ length: STEP_COUNT }, (_, i) => 170 - 90 * (i / (STEP_COUNT - 1)));
+const STEP_START = STEP_MS.reduce((starts, ms, i) => { starts.push(i ? starts[i - 1] + STEP_MS[i - 1] : 0); return starts; }, []);
+const DRAW_MS = STEP_START[STEP_COUNT - 1] + STEP_MS[STEP_COUNT - 1]; // 8000
+
+function stepAt(elapsedMs) {
+  let step = 0;
+  while (step < STEP_COUNT - 1 && STEP_START[step + 1] <= elapsedMs) step++;
+  return step;
+}
+
+// Schedules the whole theme up front on the audio clock, skipping anything before offsetMs
+// so the music can be switched on part-way through a draw and stay in sync with the animation.
+function startDrawMusic(offsetMs = 0) {
   stopDrawMusic();
   if (!sound.enabled || !getAudioContext()) return;
-  sound.beat = 0;
-  const melody = [261.63, 329.63, 392, 329.63, 293.66, 369.99, 440, 369.99];
-  const tick = () => {
-    const note = melody[sound.beat % melody.length];
-    playTone(note, 0, .16, .022, 'triangle');
-    if (sound.beat % 2 === 0) playTone(note / 2, 0, .2, .014, 'sine');
-    sound.beat++;
-  };
-  tick();
-  sound.timer = window.setInterval(tick, 230);
+  let step = 0;
+  MOUNTAIN_KING.forEach(([note, length]) => {
+    const startMs = STEP_START[step] - offsetMs;
+    const lengthMs = STEP_MS.slice(step, step + length).reduce((sum, ms) => sum + ms, 0);
+    const progress = step / STEP_COUNT;
+    if (startMs >= 0) {
+      const delay = startMs / 1000;
+      const seconds = lengthMs / 1000;
+      playTone(note, delay, seconds * .9, .16, 'square');
+      playTone(note / 4, delay, seconds * .8, .22, 'triangle');
+      if (progress > .5) playTone(note / 2, delay, seconds * .6, .08, 'sawtooth');
+      if (step % 2 === 0) playKick(delay);
+      if (progress > .5 && length === 1) playNoise(delay + seconds / 2, .04, .06);
+    }
+    step += length;
+  });
 }
 
 function stopDrawMusic() {
   if (sound.timer) window.clearInterval(sound.timer);
   sound.timer = null;
+  const now = sound.context ? sound.context.currentTime : 0;
+  sound.scheduled.forEach(({ node, gain }) => {
+    try { gain.gain.cancelScheduledValues(now); gain.gain.setValueAtTime(.0001, now); node.stop(now + .01); } catch {}
+  });
+  sound.scheduled = [];
 }
 
+// Winner music: the opening fanfare of "Also sprach Zarathustra" (R. Strauss, 1896, public domain).
 function playWinnerFanfare() {
   if (!sound.enabled) return;
-  [261.63, 329.63, 392, 523.25].forEach((note, index) => {
-    const delay = index * .15;
-    playTone(note, delay, index === 3 ? .75 : .28, .055, 'triangle');
-    if (index === 3) playTone(659.25, delay, .72, .035, 'sine');
-  });
+  const brass = (note, delay, seconds, volume) => {
+    playTone(note, delay, seconds, volume, 'square');
+    playTone(note, delay, seconds, volume * .8, 'triangle');
+    playTone(note / 2, delay, seconds, volume * .5, 'triangle');
+  };
+  brass(N.C4, 0, .75, .16);
+  brass(N.G4, .7, .75, .17);
+  brass(N.C5, 1.4, .95, .18);
+  brass(N.E5, 2.3, .28, .18);
+  brass(N.DS5, 2.58, 1.5, .2);
+  playTone(N.C3, 2.58, 1.5, .25, 'triangle');
+  playTone(N.G3, 2.58, 1.5, .12, 'triangle');
+  playTone(N.C2, 0, 2.5, .2, 'triangle');
+  for (let i = 0; i < 12; i++) playKick(2.58 + i * .11);
+  playKick(3.9);
+}
+
+function playCoin(delay = 0) {
+  playTone(N.G5, delay, .08, .18, 'square');
+  playTone(N.C6, delay + .07, .08, .18, 'square');
+  playTone(N.E6, delay + .14, .45, .18, 'square');
 }
 
 function updateSoundButton() {
@@ -182,6 +298,7 @@ function randomIndex(max) {
 function runDraw() {
   if (state.drawing) return;
   state.drawing = true;
+  state.drawStart = performance.now();
   startDrawMusic();
   setView('draw');
   $('#drawStage').style.display = 'block';
@@ -189,18 +306,17 @@ function runDraw() {
   $('#progressBar').style.width = '0%';
   $('#drawStatus').textContent = 'Mixing things up...';
   const winner = state.entries[randomIndex(state.entries.length)];
-  const duration = 4200;
-  const start = performance.now();
-  let nextSwitch = 0;
+  let lastStep = -1;
 
   function animate(now) {
-    const elapsed = now - start;
-    const progress = Math.min(elapsed / duration, 1);
-    if (now >= nextSwitch) {
+    const elapsed = now - state.drawStart;
+    const progress = Math.min(elapsed / DRAW_MS, 1);
+    const step = stepAt(elapsed);
+    if (step !== lastStep) {
+      lastStep = step;
       const candidate = state.entries[randomIndex(state.entries.length)];
       $('#candidateName').textContent = candidate.name;
       $('#candidateNumber').textContent = candidate.number;
-      nextSwitch = now + 70 + progress * 260;
     }
     $('#progressBar').style.width = `${Math.round(progress * 100)}%`;
     if (progress > .72) $('#drawStatus').textContent = 'Almost there...';
@@ -223,13 +339,13 @@ function revealWinner(winner) {
     playWinnerFanfare();
     $('#winnerStage').classList.add('show');
     state.drawing = false;
-  }, 450);
+  }, 350);
 }
 
 function createConfetti() {
   const box = $('#confetti');
   box.innerHTML = '';
-  const colors = ['#a88cff', '#71e6bb', '#ffd36e', '#ff7897', '#74b8ff'];
+  const colors = ['#c33531', '#ffffff', '#581212', '#e8e8e8', '#c33531'];
   for (let i = 0; i < 45; i++) {
     const bit = document.createElement('i');
     const angle = Math.random() * Math.PI * 2;
@@ -261,10 +377,10 @@ $('#drawAgainBtn').addEventListener('click', runDraw);
 $('#newDrawBtn').addEventListener('click', () => { state.entries = []; state.file = null; $('#fileInput').value = ''; setView('upload'); });
 $('#soundToggle').addEventListener('click', () => {
   sound.enabled = !sound.enabled;
-  localStorage.setItem('luckyDrawMusic', sound.enabled ? 'on' : 'off');
+  try { localStorage.setItem('luckyDrawMusic', sound.enabled ? 'on' : 'off'); } catch {}
   if (!sound.enabled) stopDrawMusic();
-  else if (state.drawing) startDrawMusic();
-  else playTone(523.25, 0, .12, .025, 'sine');
+  else if (state.drawing) startDrawMusic(performance.now() - state.drawStart);
+  else playCoin(0);
   updateSoundButton();
 });
 updateSoundButton();
