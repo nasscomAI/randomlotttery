@@ -1,7 +1,72 @@
 const state = { entries: [], file: null, drawing: false };
+const sound = { enabled: localStorage.getItem('luckyDrawMusic') !== 'off', context: null, timer: null, beat: 0 };
 
 const $ = (selector) => document.querySelector(selector);
 const panels = { upload: $('#uploadPanel'), review: $('#reviewPanel'), draw: $('#drawPanel') };
+
+function getAudioContext() {
+  if (!sound.context) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) sound.context = new AudioContext();
+  }
+  if (sound.context?.state === 'suspended') sound.context.resume();
+  return sound.context;
+}
+
+function playTone(frequency, delay = 0, duration = .13, volume = .035, type = 'sine') {
+  if (!sound.enabled) return;
+  const context = getAudioContext();
+  if (!context) return;
+  const start = context.currentTime + delay;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  gain.gain.setValueAtTime(.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + .018);
+  gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  oscillator.connect(gain).connect(context.destination);
+  oscillator.start(start);
+  oscillator.stop(start + duration + .02);
+}
+
+function startDrawMusic() {
+  stopDrawMusic();
+  if (!sound.enabled || !getAudioContext()) return;
+  sound.beat = 0;
+  const melody = [261.63, 329.63, 392, 329.63, 293.66, 369.99, 440, 369.99];
+  const tick = () => {
+    const note = melody[sound.beat % melody.length];
+    playTone(note, 0, .16, .022, 'triangle');
+    if (sound.beat % 2 === 0) playTone(note / 2, 0, .2, .014, 'sine');
+    sound.beat++;
+  };
+  tick();
+  sound.timer = window.setInterval(tick, 230);
+}
+
+function stopDrawMusic() {
+  if (sound.timer) window.clearInterval(sound.timer);
+  sound.timer = null;
+}
+
+function playWinnerFanfare() {
+  if (!sound.enabled) return;
+  [261.63, 329.63, 392, 523.25].forEach((note, index) => {
+    const delay = index * .15;
+    playTone(note, delay, index === 3 ? .75 : .28, .055, 'triangle');
+    if (index === 3) playTone(659.25, delay, .72, .035, 'sine');
+  });
+}
+
+function updateSoundButton() {
+  const button = $('#soundToggle');
+  button.classList.toggle('muted', !sound.enabled);
+  button.setAttribute('aria-pressed', String(sound.enabled));
+  button.setAttribute('aria-label', sound.enabled ? 'Turn off draw music' : 'Turn on draw music');
+  button.querySelector('.sound-icon').textContent = sound.enabled ? '♪' : '×';
+  button.querySelector('b').textContent = sound.enabled ? 'Music on' : 'Music off';
+}
 
 function setView(view) {
   Object.values(panels).forEach((panel) => panel.classList.remove('active'));
@@ -117,6 +182,7 @@ function randomIndex(max) {
 function runDraw() {
   if (state.drawing) return;
   state.drawing = true;
+  startDrawMusic();
   setView('draw');
   $('#drawStage').style.display = 'block';
   $('#winnerStage').classList.remove('show');
@@ -145,6 +211,7 @@ function runDraw() {
 }
 
 function revealWinner(winner) {
+  stopDrawMusic();
   $('#candidateName').textContent = winner.name;
   $('#candidateNumber').textContent = winner.number;
   setTimeout(() => {
@@ -153,6 +220,7 @@ function revealWinner(winner) {
     $('#winnerDetail').textContent = winner.detail;
     $('#winnerNumber').textContent = winner.number;
     createConfetti();
+    playWinnerFanfare();
     $('#winnerStage').classList.add('show');
     state.drawing = false;
   }, 450);
@@ -191,3 +259,12 @@ $('#changeFileBtn').addEventListener('click', () => { $('#fileInput').value = ''
 $('#startBtn').addEventListener('click', runDraw);
 $('#drawAgainBtn').addEventListener('click', runDraw);
 $('#newDrawBtn').addEventListener('click', () => { state.entries = []; state.file = null; $('#fileInput').value = ''; setView('upload'); });
+$('#soundToggle').addEventListener('click', () => {
+  sound.enabled = !sound.enabled;
+  localStorage.setItem('luckyDrawMusic', sound.enabled ? 'on' : 'off');
+  if (!sound.enabled) stopDrawMusic();
+  else if (state.drawing) startDrawMusic();
+  else playTone(523.25, 0, .12, .025, 'sine');
+  updateSoundButton();
+});
+updateSoundButton();

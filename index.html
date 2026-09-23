@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b1020" />
-    <title>Lucky Draw</title>
+    <title>NASSCOM Lucky Draw</title>
+    <link rel="icon" href="assets/favicon.ico" sizes="any" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
@@ -17,14 +18,20 @@
     <main class="app-shell">
       <header class="topbar">
         <a class="brand" href="#" aria-label="Lucky Draw home">
-          <span class="brand-mark">✦</span>
+          <img src="assets/nasscom-logo.svg" alt="NASSCOM" />
+          <span class="brand-divider"></span>
           <span>Lucky Draw</span>
         </a>
-        <div class="fairness"><span></span> Fair &amp; random selection</div>
+        <div class="top-actions">
+          <button class="sound-toggle" id="soundToggle" type="button" aria-pressed="true" aria-label="Turn off draw music">
+            <span class="sound-icon" aria-hidden="true">♪</span><b>Music on</b>
+          </button>
+          <div class="fairness"><span></span> Fair &amp; random selection</div>
+        </div>
       </header>
 
       <section class="hero">
-        <div class="eyebrow">A little suspense. One lucky winner.</div>
+        <div class="eyebrow">NASSCOM · A little suspense. One lucky winner.</div>
         <h1>Turn a list into<br /><em>a moment.</em></h1>
         <p>Upload your participants, start the draw, and let chance choose the winner.</p>
       </section>

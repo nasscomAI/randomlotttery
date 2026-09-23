@@ -2,11 +2,14 @@
 
 A polished, browser-based CSV lucky-draw app with an animated selection flow.
 
+Uses official NASSCOM logo and favicon assets from `nasscom.in`.
+
 ## Features
 
 - Drag-and-drop CSV, XLSX, and XLS upload with clear validation
 - Participant review before the draw
 - Animated, cryptographically random selection
+- Original procedural draw music, winner fanfare, and sound control
 - Celebratory winner reveal and redraw option
 - Responsive design for desktop and mobile
 - Private by design: CSV contents never leave the browser
