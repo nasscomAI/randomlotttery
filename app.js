@@ -36,18 +36,26 @@ function parseCSV(text) {
 }
 
 function normaliseEntries(rows) {
-  if (rows.length < 2) throw new Error('The CSV needs a header and at least one participant.');
+  if (rows.length < 2) throw new Error('The file needs a header and at least one participant.');
   const headers = rows[0].map((value) => value.toLowerCase().replace(/[^a-z0-9]/g, ''));
   const nameIndex = headers.findIndex((h) => ['name', 'fullname', 'participant', 'participantname'].includes(h));
   const numberIndex = headers.findIndex((h) => ['number', 'randomnumber', 'luckynumber', 'id', 'ticketnumber', 'ticket'].includes(h));
-  if (nameIndex < 0 || numberIndex < 0) throw new Error('Please include columns named “Name” and “Number”.');
+  const detailIndex = headers.findIndex((h) => ['company', 'companyname', 'organisation', 'organization', 'details', 'department', 'team'].includes(h));
+  if (nameIndex < 0) throw new Error('Please include a column named “Name”.');
 
-  const entries = rows.slice(1).filter((row) => row.some(Boolean)).map((row, index) => ({
-    name: (row[nameIndex] || '').trim(), number: (row[numberIndex] || '').trim(), row: index + 2
+  const dataRows = rows.slice(1).filter((row) => row.some((cell) => String(cell ?? '').trim()));
+  const numberWidth = Math.max(2, String(dataRows.length).length);
+  const entries = dataRows.map((row, index) => ({
+    name: String(row[nameIndex] ?? '').trim(),
+    number: numberIndex >= 0 && String(row[numberIndex] ?? '').trim()
+      ? String(row[numberIndex]).trim()
+      : String(index + 1).padStart(numberWidth, '0'),
+    detail: detailIndex >= 0 ? String(row[detailIndex] ?? '').trim() : '',
+    row: index + 2
   }));
-  const invalid = entries.find((entry) => !entry.name || !entry.number);
-  if (invalid) throw new Error(`Row ${invalid.row} is missing a name or number.`);
-  if (!entries.length) throw new Error('No participants were found in this CSV.');
+  const invalid = entries.find((entry) => !entry.name);
+  if (invalid) throw new Error(`Row ${invalid.row} is missing a participant name.`);
+  if (!entries.length) throw new Error('No participants were found in this file.');
   return entries;
 }
 
@@ -58,10 +66,20 @@ function showError(message) {
 
 async function handleFile(file) {
   $('#errorMessage').classList.remove('show');
-  if (!file || !file.name.toLowerCase().endsWith('.csv')) return showError('Choose a valid .csv file.');
+  const extension = file?.name.toLowerCase().match(/\.(csv|xlsx|xls)$/)?.[1];
+  if (!file || !extension) return showError('Choose a valid CSV, XLSX, or XLS file.');
   if (file.size > 5 * 1024 * 1024) return showError('That file is over the 5 MB limit.');
   try {
-    const entries = normaliseEntries(parseCSV(await file.text()));
+    let rows;
+    if (extension === 'csv') {
+      rows = parseCSV(await file.text());
+    } else {
+      if (!window.XLSX) throw new Error('The Excel reader could not load. Check your internet connection and try again.');
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      if (!workbook.SheetNames.length) throw new Error('No worksheets were found in this Excel file.');
+      rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: '', raw: false });
+    }
+    const entries = normaliseEntries(rows);
     state.entries = entries;
     state.file = file;
     renderReview();
@@ -70,11 +88,13 @@ async function handleFile(file) {
 }
 
 function renderReview() {
+  const extension = state.file.name.split('.').pop().toUpperCase();
+  $('.file-icon').textContent = extension;
   $('#fileName').textContent = state.file.name;
   $('#fileMeta').textContent = `${state.entries.length} participant${state.entries.length === 1 ? '' : 's'} · ${(state.file.size / 1024).toFixed(1)} KB`;
   $('#reviewSummary').textContent = `${state.entries.length} participant${state.entries.length === 1 ? '' : 's'} entered and ready to go.`;
   $('#entriesBody').innerHTML = state.entries.map((entry, index) =>
-    `<tr><td>${index + 1}</td><td>${escapeHTML(entry.name)}</td><td>${escapeHTML(entry.number)}</td></tr>`
+    `<tr><td>${index + 1}</td><td>${escapeHTML(entry.name)}</td><td>${escapeHTML(entry.detail || '—')}</td><td>${escapeHTML(entry.number)}</td></tr>`
   ).join('');
 }
 
@@ -130,6 +150,7 @@ function revealWinner(winner) {
   setTimeout(() => {
     $('#drawStage').style.display = 'none';
     $('#winnerName').textContent = winner.name;
+    $('#winnerDetail').textContent = winner.detail;
     $('#winnerNumber').textContent = winner.number;
     createConfetti();
     $('#winnerStage').classList.add('show');

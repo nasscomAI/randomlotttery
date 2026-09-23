@@ -43,19 +43,19 @@
             <div>
               <span class="panel-kicker">STEP 01</span>
               <h2>Bring in your crowd</h2>
-              <p>Upload a CSV with a name and number column.</p>
+              <p>Upload a CSV or Excel file with participant names.</p>
             </div>
             <button class="sample-link" id="sampleBtn" type="button">↓ Sample CSV</button>
           </div>
 
           <label class="drop-zone" id="dropZone" for="fileInput">
-            <input id="fileInput" type="file" accept=".csv,text/csv" hidden />
+            <input id="fileInput" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden />
             <span class="upload-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
             </span>
-            <strong>Drop your CSV here</strong>
+            <strong>Drop your CSV or Excel file here</strong>
             <span>or <u>browse your computer</u></span>
-            <small>CSV only · Maximum 5 MB</small>
+            <small>CSV, XLSX or XLS · Maximum 5 MB</small>
           </label>
           <div class="error-message" id="errorMessage" role="alert"></div>
         </div>
@@ -78,7 +78,7 @@
 
           <div class="table-wrap">
             <table>
-              <thead><tr><th>#</th><th>Participant</th><th>Number</th></tr></thead>
+              <thead><tr><th>#</th><th>Participant</th><th>Company / details</th><th>Number</th></tr></thead>
               <tbody id="entriesBody"></tbody>
             </table>
           </div>
@@ -102,6 +102,7 @@
             <div class="trophy">✦</div>
             <span class="winner-label">AND THE WINNER IS</span>
             <h2 id="winnerName"></h2>
+            <div class="winner-detail" id="winnerDetail"></div>
             <div class="winner-number">Lucky number <strong id="winnerNumber"></strong></div>
             <p>Congratulations! Today, chance chose you.</p>
             <div class="winner-actions">
@@ -114,6 +115,7 @@
 
       <footer><span>✦</span> No data leaves your browser. Your list stays private.</footer>
     </main>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
