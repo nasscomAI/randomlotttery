@@ -1,19 +1,33 @@
 const state = { entries: [], file: null, drawing: false };
-const sound = { enabled: localStorage.getItem('luckyDrawMusic') !== 'off', context: null, timer: null, beat: 0 };
+const sound = { enabled: readMusicPreference(), context: null, bus: null, master: null, noise: null, timer: null, beat: 0 };
+
+function readMusicPreference() {
+  try { return localStorage.getItem('luckyDrawMusic') !== 'off'; } catch { return true; }
+}
 
 const $ = (selector) => document.querySelector(selector);
 const panels = { upload: $('#uploadPanel'), review: $('#reviewPanel'), draw: $('#drawPanel') };
 
+const MASTER_VOLUME = .6;
+
 function getAudioContext() {
   if (!sound.context) {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (AudioContext) sound.context = new AudioContext();
+    if (!AudioContext) return null;
+    sound.context = new AudioContext();
+    // One master chain: a limiter so stacked notes never clip, then a single volume control.
+    const limiter = sound.context.createDynamicsCompressor();
+    limiter.threshold.value = -12; limiter.ratio.value = 6; limiter.attack.value = .003; limiter.release.value = .12;
+    sound.master = sound.context.createGain();
+    sound.master.gain.value = MASTER_VOLUME;
+    limiter.connect(sound.master).connect(sound.context.destination);
+    sound.bus = limiter;
   }
-  if (sound.context?.state === 'suspended') sound.context.resume();
+  if (sound.context.state === 'suspended') sound.context.resume();
   return sound.context;
 }
 
-function playTone(frequency, delay = 0, duration = .13, volume = .035, type = 'sine') {
+function playTone(frequency, delay = 0, duration = .25, volume = .25, type = 'sine') {
   if (!sound.enabled) return;
   const context = getAudioContext();
   if (!context) return;
@@ -23,26 +37,80 @@ function playTone(frequency, delay = 0, duration = .13, volume = .035, type = 's
   oscillator.type = type;
   oscillator.frequency.setValueAtTime(frequency, start);
   gain.gain.setValueAtTime(.0001, start);
-  gain.gain.exponentialRampToValueAtTime(volume, start + .018);
+  gain.gain.exponentialRampToValueAtTime(volume, start + .015);
+  gain.gain.setValueAtTime(volume, start + Math.max(.015, duration * .35));
   gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
-  oscillator.connect(gain).connect(context.destination);
+  oscillator.connect(gain).connect(sound.bus);
   oscillator.start(start);
-  oscillator.stop(start + duration + .02);
+  oscillator.stop(start + duration + .03);
 }
+
+function playKick(delay = 0) {
+  if (!sound.enabled) return;
+  const context = getAudioContext();
+  if (!context) return;
+  const start = context.currentTime + delay;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.frequency.setValueAtTime(150, start);
+  oscillator.frequency.exponentialRampToValueAtTime(45, start + .12);
+  gain.gain.setValueAtTime(.7, start);
+  gain.gain.exponentialRampToValueAtTime(.001, start + .18);
+  oscillator.connect(gain).connect(sound.bus);
+  oscillator.start(start);
+  oscillator.stop(start + .2);
+}
+
+function playNoise(delay = 0, duration = .05, volume = .12) {
+  if (!sound.enabled) return;
+  const context = getAudioContext();
+  if (!context) return;
+  if (!sound.noise) {
+    const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    sound.noise = buffer;
+  }
+  const start = context.currentTime + delay;
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const gain = context.createGain();
+  source.buffer = sound.noise;
+  filter.type = 'highpass'; filter.frequency.value = 6000;
+  gain.gain.setValueAtTime(volume, start);
+  gain.gain.exponentialRampToValueAtTime(.001, start + duration);
+  source.connect(filter).connect(gain).connect(sound.bus);
+  source.start(start);
+  source.stop(start + duration + .02);
+}
+
+// Original 8-bit style loop in C major: 32 sixteenth-note steps (two bars), square lead,
+// pulse bass, noise hats. 0 = rest. Written for this app; not a transcription of anything.
+const BEAT_MS = 105;
+const N = { G3: 196, A3: 220, B3: 246.94, C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392, A4: 440, B4: 493.88,
+  C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880, B5: 987.77, C6: 1046.5, E6: 1318.5, G6: 1567.98,
+  C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G2: 98, A2: 110 };
+const LOOP = {
+  lead: [N.E5, N.G5, N.C6, 0, N.G5, 0, N.E5, 0, N.D5, N.E5, N.F5, 0, N.E5, 0, N.D5, 0,
+         N.C5, N.E5, N.G5, 0, N.A5, 0, N.G5, 0, N.F5, N.E5, N.D5, N.E5, N.C5, 0, 0, 0],
+  bass: [N.C3, 0, N.C3, 0, N.G2, 0, N.G2, 0, N.F3, 0, N.F3, 0, N.G3, 0, N.G3, 0,
+         N.A2, 0, N.A2, 0, N.E3, 0, N.E3, 0, N.F3, 0, N.F3, 0, N.G3, 0, N.G3, 0]
+};
 
 function startDrawMusic() {
   stopDrawMusic();
   if (!sound.enabled || !getAudioContext()) return;
   sound.beat = 0;
-  const melody = [261.63, 329.63, 392, 329.63, 293.66, 369.99, 440, 369.99];
   const tick = () => {
-    const note = melody[sound.beat % melody.length];
-    playTone(note, 0, .16, .022, 'triangle');
-    if (sound.beat % 2 === 0) playTone(note / 2, 0, .2, .014, 'sine');
+    const step = sound.beat % LOOP.lead.length;
+    if (LOOP.lead[step]) playTone(LOOP.lead[step], 0, .17, .16, 'square');
+    if (LOOP.bass[step]) playTone(LOOP.bass[step], 0, .2, .2, 'triangle');
+    if (step % 4 === 0) playKick();
+    if (step % 2 === 1) playNoise(0, .04, step % 4 === 3 ? .1 : .05);
     sound.beat++;
   };
   tick();
-  sound.timer = window.setInterval(tick, 230);
+  sound.timer = window.setInterval(tick, BEAT_MS);
 }
 
 function stopDrawMusic() {
@@ -50,13 +118,23 @@ function stopDrawMusic() {
   sound.timer = null;
 }
 
+function playCoin(delay = 0) {
+  playTone(N.G5, delay, .08, .18, 'square');
+  playTone(N.C6, delay + .07, .08, .18, 'square');
+  playTone(N.E6, delay + .14, .45, .18, 'square');
+}
+
 function playWinnerFanfare() {
   if (!sound.enabled) return;
-  [261.63, 329.63, 392, 523.25].forEach((note, index) => {
-    const delay = index * .15;
-    playTone(note, delay, index === 3 ? .75 : .28, .055, 'triangle');
-    if (index === 3) playTone(659.25, delay, .72, .035, 'sine');
-  });
+  playCoin(0);
+  // Short victory riff after the coin: a rising run that lands on a held C major chord.
+  const run = [N.C5, N.E5, N.G5, N.C6, N.E6];
+  run.forEach((note, index) => playTone(note, .55 + index * .09, .12, .16, 'square'));
+  const hold = 1.05;
+  [N.C5, N.E5, N.G5, N.C6].forEach((note, voice) => playTone(note, hold, 1.1, voice === 3 ? .18 : .12, voice % 2 ? 'square' : 'triangle'));
+  playTone(N.C3, hold, 1.1, .3, 'triangle');
+  [0, .55, hold].forEach((d) => playKick(d));
+  [.6, .78, .96].forEach((d) => playNoise(d, .04, .07));
 }
 
 function updateSoundButton() {
@@ -215,6 +293,7 @@ function revealWinner(winner) {
   $('#candidateName').textContent = winner.name;
   $('#candidateNumber').textContent = winner.number;
   setTimeout(() => {
+    stopDrawMusic();
     $('#drawStage').style.display = 'none';
     $('#winnerName').textContent = winner.name;
     $('#winnerDetail').textContent = winner.detail;
@@ -229,7 +308,7 @@ function revealWinner(winner) {
 function createConfetti() {
   const box = $('#confetti');
   box.innerHTML = '';
-  const colors = ['#a88cff', '#71e6bb', '#ffd36e', '#ff7897', '#74b8ff'];
+  const colors = ['#c33531', '#ffffff', '#581212', '#e8e8e8', '#c33531'];
   for (let i = 0; i < 45; i++) {
     const bit = document.createElement('i');
     const angle = Math.random() * Math.PI * 2;
@@ -261,10 +340,10 @@ $('#drawAgainBtn').addEventListener('click', runDraw);
 $('#newDrawBtn').addEventListener('click', () => { state.entries = []; state.file = null; $('#fileInput').value = ''; setView('upload'); });
 $('#soundToggle').addEventListener('click', () => {
   sound.enabled = !sound.enabled;
-  localStorage.setItem('luckyDrawMusic', sound.enabled ? 'on' : 'off');
+  try { localStorage.setItem('luckyDrawMusic', sound.enabled ? 'on' : 'off'); } catch {}
   if (!sound.enabled) stopDrawMusic();
   else if (state.drawing) startDrawMusic();
-  else playTone(523.25, 0, .12, .025, 'sine');
+  else playCoin(0);
   updateSoundButton();
 });
 updateSoundButton();
