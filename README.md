@@ -4,7 +4,7 @@ A polished, browser-based CSV lucky-draw app with an animated selection flow.
 
 ## Features
 
-- Drag-and-drop CSV upload with clear validation
+- Drag-and-drop CSV, XLSX, and XLS upload with clear validation
 - Participant review before the draw
 - Animated, cryptographically random selection
 - Celebratory winner reveal and redraw option
@@ -15,7 +15,7 @@ A polished, browser-based CSV lucky-draw app with an animated selection flow.
 
 Open `index.html` in a browser, or serve the directory with any static web server.
 
-The CSV must contain `Name` and `Number` headers. A sample file can be downloaded from the app.
+Files must contain a `Name` header. `Number` is optional; when it is absent, the app assigns sequential display numbers. Optional `Company`, `Organisation`, `Department`, or `Team` columns are shown alongside each participant. For Excel workbooks, the first worksheet is used.
 
 Five test files are available in the [`samples`](samples) folder, including quoted-name and alternate-header examples.
 
